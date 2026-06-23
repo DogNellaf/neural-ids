@@ -1,166 +1,175 @@
 # NeuralIDS
 
-NeuralIDS — десктопное приложение для Windows, которое в реальном времени перехватывает сетевой трафик, извлекает признаки потоков и классифицирует их нейронной сетью (Keras/TensorFlow). Обнаруженные атаки отображаются в графическом интерфейсе (PyQt5) и сохраняются в базу данных PostgreSQL.
+> 🇬🇧 English | [🇷🇺 Русский](README.ru.md)
 
----
+A desktop application for Windows that captures network traffic in real time, extracts flow features, and classifies them using a neural network (Keras/TensorFlow). Detected attacks are displayed in a graphical interface (PyQt5) and stored in a PostgreSQL database.
 
-## Архитектура
+## Features
 
-```
-main.py           — точка входа: запускает UI + IDS в отдельном потоке
-IDS.py            — создаёт и управляет AsyncSniffer (Scapy)
-flow_session.py   — FlowSession: группирует пакеты в потоки, запускает предсказание
-flow.py           — Flow: накапливает признаки одного сетевого потока
-neural.py         — загрузка модели Keras, нормализация данных, предсказание
-db.py             — CRUD для PostgreSQL (psycopg2, параметризованные запросы)
-settings.py       — конфигурация (перекрывается переменными окружения)
-logger_config.py  — централизованная настройка логирования
+- Real-time network traffic capture via Scapy (`AsyncSniffer`)
+- Flow-based feature extraction (80+ features per flow)
+- Neural network classification (Keras/TensorFlow) across 15 attack classes
+- Graphical interface (PyQt5) with an incident list and a hide/dismiss action
+- Attack records stored in PostgreSQL
+- CSV export of attack records
+- Connection blocking via Windows Firewall (`New-NetFirewallRule`)
+- Centralized logging with file rotation
 
-Признаки потока (feature extractors):
-  flag_count.py       — подсчёт TCP-флагов
-  flow_bytes.py       — байты / bulk-метрики
-  packet_count.py     — счётчики пакетов по направлению
-  packet_direction.py — enum FORWARD / REVERSE
-  packet_flow_key.py  — ключ идентификации потока (src_ip, dst_ip, ports)
-  packet_length.py    — длины пакетов (min/max/mean/std/var)
-  packet_time.py      — временны́е характеристики (IAT, duration)
-  utils.py            — сводная статистика (mean/std/min/max/total)
+## Tech Stack
 
-UI/:
-  window.py           — главное окно (список инцидентов)
-  incident_item.py    — виджет одного инцидента (кнопка «Скрыть»)
+| Layer | Technology |
+|---|---|
+| Language | Python 3.10+ |
+| Traffic capture | Scapy (`AsyncSniffer`), Npcap/WinPcap |
+| Machine learning | Keras / TensorFlow, scikit-learn (`StandardScaler`) |
+| GUI | PyQt5 |
+| Database | PostgreSQL (psycopg2) |
+| Logging | Python `logging` with rotation |
+| Testing | pytest |
 
-tests/              — тесты pytest (без сети, БД и GPU)
-```
-
----
-
-## Требования
+## Requirements
 
 - Python 3.10+
 - PostgreSQL 14+
-- Windows (для захвата трафика через Scapy и блокировки через Windows Firewall)
-- Npcap или WinPcap (для Scapy)
+- Windows (traffic capture via Scapy and blocking via Windows Firewall)
+- Npcap or WinPcap (for Scapy)
 
----
-
-## Установка и запуск
+## Installation
 
 ```bat
-:: 1. Создать и активировать виртуальное окружение
+:: 1. Create and activate a virtual environment
 py -m venv venv
 call venv\Scripts\activate.bat
 
-:: 2. Установить зависимости
+:: 2. Install dependencies
 pip install -r requirements.txt
 
-:: 3. Создать БД PostgreSQL
+:: 3. Create the PostgreSQL database
 ::    psql -U postgres -c "CREATE DATABASE ids;"
 
-:: 4. Настроить параметры (или через переменные окружения — см. ниже)
-::    Отредактировать settings.py
+:: 4. Configure parameters (or use environment variables — see below)
+::    Edit settings.py
 
-:: 5. Запустить
+:: 5. Run
 python main.py
 ```
 
-Либо через `run.bat`, который делает всё автоматически.
+Or simply run `run.bat`, which does all of the above automatically.
 
----
+## Environment Variables
 
-## Конфигурация
+All parameters are read from `settings.py`, but can be overridden with environment variables:
 
-Все параметры читаются из `settings.py`, но могут быть переопределены переменными окружения:
+| Variable | Default | Description |
+|---|---|---|
+| `IDS_INTERFACE` | `Беспроводная сеть 2` | Network interface to capture on |
+| `IDS_MODEL_NAME` | `model.keras` | Path to the Keras model file |
+| `IDS_DEBUG` | `false` | Verbose prediction output |
+| `IDS_DB_NAME` | `ids` | PostgreSQL database name |
+| `IDS_DB_USER` | `postgres` | Database user |
+| `IDS_DB_PASSWORD` | `root` | Database password |
+| `IDS_DB_HOST` | `localhost` | Database host |
 
-| Переменная окружения  | По умолчанию         | Описание                          |
-|-----------------------|----------------------|-----------------------------------|
-| `IDS_INTERFACE`       | `Беспроводная сеть 2`| Сетевой интерфейс для захвата     |
-| `IDS_MODEL_NAME`      | `model.keras`        | Путь к файлу модели Keras         |
-| `IDS_DEBUG`           | `false`              | Подробный вывод предсказаний      |
-| `IDS_DB_NAME`         | `ids`                | Имя базы данных PostgreSQL        |
-| `IDS_DB_USER`         | `postgres`           | Пользователь БД                   |
-| `IDS_DB_PASSWORD`     | `root`               | Пароль БД                         |
-| `IDS_DB_HOST`         | `localhost`          | Хост БД                           |
-
-Пример:
+Example:
 ```bat
 set IDS_INTERFACE=Ethernet
 set IDS_DEBUG=true
 python main.py
 ```
 
----
+## Attack Classes
 
-## Классы атак
+The neural network classifies traffic into 15 classes (defined in `settings.ATTACKS`):
 
-Нейросеть классифицирует трафик по 15 классам (определяются в `settings.ATTACKS`):
+| Index | Class |
+|---|---|
+| 0 | Benign |
+| 1 | Bot |
+| 2 | DoS attacks-SlowHTTPTest |
+| 3 | DoS attacks-Hulk |
+| 4 | DoS attacks-GoldenEye |
+| 5 | Brute Force -Web |
+| 6 | Brute Force -XSS |
+| 7 | SQL Injection |
+| 8 | Infilteration |
+| 9–14 | DDoS, FTP/SSH BruteForce |
 
-| Индекс | Класс                    |
-|--------|--------------------------|
-| 0      | Benign (нормальный)      |
-| 1      | Bot                      |
-| 2      | DoS attacks-SlowHTTPTest |
-| 3      | DoS attacks-Hulk         |
-| 4      | DoS attacks-GoldenEye    |
-| 5      | Brute Force -Web         |
-| 6      | Brute Force -XSS         |
-| 7      | SQL Injection             |
-| 8      | Infilteration            |
-| 9–14   | DDoS, FTP/SSH BruteForce |
+## Database
 
----
+On first run, the `attack` table is created automatically. The schema holds 80+ flow features, source/destination IP addresses, attack type, a timestamp, and a visibility flag.
 
-## База данных
-
-При первом запуске таблица `attack` создаётся автоматически. Схема содержит 80+ признаков потока, IP-адреса источника и назначения, тип атаки, временну́ю метку и флаг видимости.
-
-### Полезные функции (db.py)
+### Useful Functions (db.py)
 
 ```python
 import db
 
-# Получить все видимые инциденты
+# Get all visible incidents
 attacks = db.get_visible_attacks()
 
-# Скрыть инцидент по id
+# Hide an incident by id
 db.set_hidden(42)
 
-# Экспортировать все записи в CSV
+# Export all records to CSV
 count = db.export_attacks_csv("attacks_export.csv")
 
-# Статистика по типам атак
+# Attack type statistics
 stats = db.get_attack_stats()  # {"Bot": 12, "Benign": 1450, ...}
 ```
 
----
-
-## Запуск тестов
+## Running Tests
 
 ```bat
 pip install pytest
 pytest tests/ -v
 ```
 
-Тесты не требуют сети, PostgreSQL и GPU — все внешние зависимости замокированы.
+Tests require no network, PostgreSQL, or GPU — all external dependencies are mocked.
 
----
+## Logging
 
-## Логирование
+Logs are printed to the console and saved to `ids.log` (rotated every 5 MB, 3 backups kept).
 
-Логи выводятся в консоль и сохраняются в файл `ids.log` (ротация каждые 5 МБ, 3 резервные копии).
+Levels:
+- `INFO` — startup/shutdown, attack detection, database writes
+- `WARNING` — attack detected
+- `DEBUG` — detailed neural network predictions (enabled via `IDS_DEBUG=true`)
+- `ERROR` — database or firewall errors
 
-Уровни:
-- `INFO` — запуск/остановка, обнаружение атак, сохранение в БД
-- `WARNING` — обнаруженная атака
-- `DEBUG` — детальное предсказание нейросети (включается `IDS_DEBUG=true`)
-- `ERROR` — ошибки БД, брандмауэра
+## Project Structure
 
----
+```
+main.py           — entry point: launches the UI and the IDS in a separate thread
+IDS.py            — creates and manages the AsyncSniffer (Scapy)
+flow_session.py   — FlowSession: groups packets into flows, triggers prediction
+flow.py           — Flow: accumulates features for a single network flow
+neural.py         — Keras model loading, data normalization, prediction
+db.py             — PostgreSQL CRUD (psycopg2, parameterized queries)
+settings.py       — configuration (overridable via environment variables)
+logger_config.py  — centralized logging setup
 
-## Известные ограничения
+Feature extractors:
+  flag_count.py       — TCP flag counting
+  flow_bytes.py       — byte / bulk metrics
+  packet_count.py     — packet counters by direction
+  packet_direction.py — FORWARD / REVERSE enum
+  packet_flow_key.py  — flow identification key (src_ip, dst_ip, ports)
+  packet_length.py    — packet length stats (min/max/mean/std/var)
+  packet_time.py      — timing features (IAT, duration)
+  utils.py            — summary statistics (mean/std/min/max/total)
 
-1. **Нормализация данных** — `StandardScaler` в `neural.py` обучается на каждом батче вместо использования scaler'а, сохранённого при обучении. Для промышленного применения необходимо сохранить scaler вместе с моделью (`joblib.dump`) и загружать его при старте.
+UI/:
+  window.py           — main window (incident list)
+  incident_item.py    — single incident widget ("Hide" button)
 
-2. **Блокировка соединений** — требует прав администратора Windows для вызова `New-NetFirewallRule`.
+tests/              — pytest test suite (no network, DB, or GPU)
+```
 
-3. **Только Windows** — Scapy на Windows требует Npcap; блокировка через PowerShell Windows-специфична.
+## Known Limitations
+
+1. **Data normalization** — the `StandardScaler` in `neural.py` is fit on each batch instead of using the scaler saved during training. For production use, the scaler should be persisted alongside the model (`joblib.dump`) and loaded at startup.
+2. **Connection blocking** — requires Windows administrator privileges to call `New-NetFirewallRule`.
+3. **Windows only** — Scapy on Windows requires Npcap; blocking via PowerShell is Windows-specific.
+
+## License
+
+[MIT](LICENSE)
